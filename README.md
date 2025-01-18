@@ -139,10 +139,21 @@ sudo ./enhanced-security-script.sh --restore
 - Fail2Ban log: `/var/log/fail2ban.log`
 
 ## Compliance
-- DISA STIG compliance settings
-- CIS Benchmark alignment
-- Automated compliance checking
-- Regular security assessments
+
+### DISA STIG Controls
+Implements critical controls from DISA STIG guidelines including:
+- Account and Authentication Security (V-230234, V-230236)
+- Audit Configuration (V-230445)
+- Network Security (V-230484, V-230485)
+
+### CIS Benchmark Implementation
+- Level 1 Server Controls (Sections 1-6)
+- Automated scoring against CIS profiles
+
+### Daily Compliance Reports
+- Detailed compliance status reports
+- Configuration drift detection
+- Failed control notifications
 
 ## Troubleshooting
 
