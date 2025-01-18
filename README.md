@@ -183,11 +183,15 @@ tail -f /var/log/security_hardening.log
 ```
 
 ## Best Practices
-1. Always run `--dry-run` first
+1. Always run `--dry-run` first ( sudo ./enhanced-security-script.sh --dry-run )
 2. Review configuration before running
 3. Maintain regular backups
 4. Monitor logs after implementation
 5. Regularly update security policies
+
+## Testing Recommendations
+
+Before implementing this script in a production environment, we strongly recommend the following testing approach:
 
 ## License
 See the LICENSE file for details.
