@@ -190,7 +190,7 @@ tail -f /var/log/security_hardening.log
 5. Regularly update security policies
 
 ## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+See the LICENSE file for details.
 
 ## Acknowledgments
 - DISA STIG Guidelines
