@@ -189,10 +189,6 @@ tail -f /var/log/security_hardening.log
 4. Monitor logs after implementation
 5. Regularly update security policies
 
-## Testing Recommendations
-
-Before implementing this script in a production environment, we strongly recommend the following testing approach:
-
 ## License
 See the LICENSE file for details.
 
