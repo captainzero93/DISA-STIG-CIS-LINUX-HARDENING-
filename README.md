@@ -199,9 +199,9 @@ See the LICENSE file for details.
 - Open Source Security Community
 
 ## Version History
-- v 3.1: added crowdsec
-- v3.0: Enhanced security features, improved configuration, STIG/CIS compliance
-- v2.0: Added network segmentation, improved monitoring
-- v1.0: Initial release
+- v 3.1: added crowdsec and fixed a bunch of errors.
+- v3.0: Enhanced security features, improved configuration, STIG/CIS compliance.
+- v2.0: Added network segmentation, improved monitoring.
+- v1.0: Initial release,=.
 
 
