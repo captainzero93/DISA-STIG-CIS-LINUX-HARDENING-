@@ -1,7 +1,7 @@
 # (Enhanced) Linux Security Hardening Script
 
 ## Overview
-This project provides a (somewhat) comprehensive security hardening solution for Ubuntu and Debian-based Linux systems, implementing DISA STIG and CIS Compliance standards. V3 includes enhanced features, improved error handling, and configurable security controls.
+This project provides a (somewhat) comprehensive security hardening solution for Ubuntu and Debian-based Linux systems, implementing DISA STIG and CIS Compliance standards. V3.1 includes enhanced features, improved error handling, and configurable security controls.
 
 ## Features
 - Comprehensive system hardening aligned with STIG/CIS standards
