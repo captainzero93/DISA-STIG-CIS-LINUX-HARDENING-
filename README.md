@@ -112,7 +112,7 @@ OSSEC_ENABLED="true"
 - Network segmentation
 - DMZ configuration
 - Rate limiting
-- IPv6 security
+- IPv6 security measures
 
 ### Monitoring & Auditing
 - File integrity monitoring (AIDE)
