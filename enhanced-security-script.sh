@@ -1,9 +1,10 @@
 #!/bin/bash
-# Enhanced Linux Security Hardening Script v3.0
+# Enhanced Linux Security Hardening Script v3.1
 # Implements DISA STIG and CIS Compliance standards with comprehensive security controls
+# Added CrowdSec and Cloudflare OPKSSH SSO support
 
 # Global Variables and Configuration
-VERSION="3.0"
+VERSION="3.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${SCRIPT_DIR}/security_config.conf"
 BACKUP_DIR="/root/security_backup_$(date +%Y%m%d_%H%M%S)"
@@ -32,6 +33,8 @@ declare -A CONFIG=(
     [USB_CONTROL_ENABLED]="true"
     [NETWORK_SEGMENTATION]="true"
     [FILE_INTEGRITY_MONITORING]="true"
+    [CROWDSEC_ENABLED]="true"
+    [OPKSSH_ENABLED]="true"
 )
 
 # Enhanced logging function with syslog support
@@ -825,6 +828,11 @@ profile sshd /usr/sbin/sshd {
     /proc/sys/kernel/ngroups_max r,
     /run/utmp rk,
     @{HOME}/.ssh/authorized_keys r,
+    
+    # Add support for OPKSSH auth helper
+    /usr/local/bin/opk-ssh-auth-helper PUx,
+    /etc/ssh/opk_trusted_user_ca_keys.pem r,
+    /etc/opkssh/** r,
 }
 EOF
 
@@ -1047,6 +1055,170 @@ EOF
     log "INFO" "Security monitoring configured successfully"
 }
 
+# Function to setup CrowdSec
+setup_crowdsec() {
+    log "INFO" "Configuring CrowdSec..."
+    
+    # Install CrowdSec
+    log "INFO" "Installing CrowdSec..."
+    if ! command -v cscli &>/dev/null; then
+        curl -s https://packagecloud.io/install/repositories/crowdsec/crowdsec/script.deb.sh | sudo bash
+        install_package "crowdsec"
+    else
+        log "INFO" "CrowdSec is already installed"
+    fi
+    
+    # Install CrowdSec firewall bouncer
+    log "INFO" "Installing CrowdSec firewall bouncer..."
+    install_package "crowdsec-firewall-bouncer"
+    
+    # Configure CrowdSec
+    log "INFO" "Configuring CrowdSec..."
+    
+    # Enable community sharing
+    log "INFO" "Registering with CrowdSec community..."
+    sudo cscli capi register || log "WARNING" "Failed to register with CrowdSec community"
+    
+    # Install collections for common threats
+    log "INFO" "Installing CrowdSec collections..."
+    sudo cscli collections install crowdsecurity/linux
+    sudo cscli collections install crowdsecurity/sshd
+    sudo cscli collections install crowdsecurity/http-cve
+    
+    # Install parsers for common services
+    log "INFO" "Installing CrowdSec parsers..."
+    sudo cscli parsers install crowdsecurity/whitelists
+    sudo cscli parsers install crowdsecurity/sshd
+    sudo cscli parsers install crowdsecurity/nginx
+    sudo cscli parsers install crowdsecurity/apache2
+    
+    # Configure CrowdSec to work with local firewall
+    if [ "${CONFIG[FIREWALL_ENABLED]}" = "true" ]; then
+        log "INFO" "Configuring CrowdSec with local firewall..."
+        # Add a bouncer for the firewall
+        BOUNCER_KEY=$(sudo cscli bouncers add firewall-bouncer -o raw)
+        
+        # Configure the bouncer
+        cat << EOF | sudo tee /etc/crowdsec/bouncers/firewall-bouncer.yaml > /dev/null
+api_url: http://127.0.0.1:8080/
+api_key: ${BOUNCER_KEY}
+update_frequency: 10s
+blacklists_ipv4: /etc/crowdsec/blacklists/ipv4.deny
+blacklists_ipv6: /etc/crowdsec/blacklists/ipv6.deny
+daemon: true
+log_mode: file
+log_dir: /var/log/
+log_level: info
+EOF
+    fi
+    
+    # Integrate with UFW if enabled
+    if [ "${CONFIG[FIREWALL_ENABLED]}" = "true" ]; then
+        log "INFO" "Integrating CrowdSec with UFW..."
+        cat << EOF | sudo tee /etc/crowdsec/bouncers/firewall-bouncer-ufw.yaml > /dev/null
+mode: ufw
+piddir: /var/run/
+update_frequency: 10s
+daemonize: true
+log_mode: file
+log_dir: /var/log/
+log_level: info
+api_url: http://localhost:8080/
+api_key: ${BOUNCER_KEY}
+disable_ipv6: $([ "${CONFIG[IPV6_ENABLED]}" = "false" ] && echo "true" || echo "false")
+deny_action: DROP
+deny_log: true
+EOF
+    fi
+    
+    # Start and enable CrowdSec service
+    sudo systemctl enable crowdsec || handle_error "Failed to enable CrowdSec service" 45
+    sudo systemctl restart crowdsec || handle_error "Failed to start CrowdSec service" 46
+    
+    # Start and enable bouncer
+    sudo systemctl enable cs-firewall-bouncer || handle_error "Failed to enable CrowdSec firewall bouncer" 47
+    sudo systemctl restart cs-firewall-bouncer || handle_error "Failed to start CrowdSec firewall bouncer" 48
+    
+    # Verify CrowdSec status
+    if ! sudo systemctl is-active --quiet crowdsec; then
+        handle_error "CrowdSec service is not running after configuration" 49
+    fi
+    
+    log "INFO" "CrowdSec configuration completed successfully"
+}
+
+# Function to setup Cloudflare OPKSSH SSO for SSH
+setup_opkssh_auth() {
+    log "INFO" "Configuring Cloudflare OPKSSH SSO for SSH authentication..."
+    
+    # Install required packages
+    install_package "curl"
+    install_package "openssh-server"
+    install_package "jq"
+    
+    # Create directory for OPKSSH
+    sudo mkdir -p /etc/opkssh
+    sudo chmod 755 /etc/opkssh
+    
+    # Download and install OPKSSH binaries
+    log "INFO" "Downloading OPKSSH binaries..."
+    sudo curl -sL https://github.com/cloudflare/opk/releases/latest/download/opk-ssh-auth-helper -o /usr/local/bin/opk-ssh-auth-helper
+    sudo chmod +x /usr/local/bin/opk-ssh-auth-helper
+    
+    # Download Cloudflare CA keys
+    log "INFO" "Downloading Cloudflare CA keys..."
+    sudo curl -s https://developers.cloudflare.com/cdn-cgi/access/certificates/opk_ca_keys.pem -o /etc/ssh/opk_trusted_user_ca_keys.pem
+    sudo chmod 644 /etc/ssh/opk_trusted_user_ca_keys.pem
+    
+    # Configure SSH server to use OPKSSH
+    log "INFO" "Configuring SSH to use OPKSSH..."
+    cat << EOF | sudo tee /etc/ssh/sshd_config.d/60-opkssh.conf > /dev/null
+# Cloudflare OPKSSH SSO configuration
+AuthorizedKeysCommand /usr/local/bin/opk-ssh-auth-helper
+AuthorizedKeysCommandUser nobody
+TrustedUserCAKeys /etc/ssh/opk_trusted_user_ca_keys.pem
+EOF
+
+    # Create OPKSSH configuration
+    log "INFO" "Creating OPKSSH configuration..."
+    
+    # Prompt for Cloudflare Zero Trust configuration
+    echo "Please enter your Cloudflare Zero Trust team domain (example.cloudflareaccess.com):"
+    read -r team_domain
+    
+    echo "Please enter your SSH application domain (ssh.example.com):"
+    read -r app_domain
+    
+    # Create OPKSSH configuration file
+    cat << EOF | sudo tee /etc/opkssh/config.json > /dev/null
+{
+    "app_domain": "${app_domain}",
+    "team_domain": "${team_domain}",
+    "service_token_file": "/etc/opkssh/service_token",
+    "log_level": "info"
+}
+EOF
+    
+    # Secure the configuration file
+    sudo chmod 644 /etc/opkssh/config.json
+    
+    # Prompt for service token
+    echo "Please enter your Cloudflare Access service token (will be hidden):"
+    read -s service_token
+    echo "$service_token" | sudo tee /etc/opkssh/service_token > /dev/null
+    sudo chmod 600 /etc/opkssh/service_token
+    
+    # Verify and restart SSH
+    log "INFO" "Verifying SSH configuration..."
+    sudo sshd -t || handle_error "SSH configuration is invalid" 50
+    
+    # Restart SSH service
+    sudo systemctl restart ssh || handle_error "Failed to restart SSH service" 51
+    
+    log "INFO" "Cloudflare OPKSSH SSO for SSH configured successfully"
+    log "INFO" "Users can now authenticate using Cloudflare Zero Trust identity"
+}
+
 # Main execution function with error handling
 main() {
     local start_time=$(date +%s)
@@ -1064,6 +1236,9 @@ main() {
     # Create backup
     backup_files
     
+    # Load configuration
+    load_configuration
+    
     # Execute security hardening functions in sequence
     if ! $DRY_RUN; then
         local functions=(
@@ -1078,9 +1253,21 @@ main() {
             "setup_secure_boot"
             "setup_network_segmentation"
             "setup_security_monitoring"
+            "setup_crowdsec"
+            "setup_opkssh_auth"
         )
         
         for func in "${functions[@]}"; do
+            # Skip function if disabled in config
+            local config_key="${func^^}"
+            config_key="${config_key#SETUP_}"
+            config_key="${config_key}_ENABLED"
+            
+            if [[ -n "${CONFIG[$config_key]}" && "${CONFIG[$config_key]}" == "false" ]]; then
+                log "INFO" "Skipping $func (disabled in configuration)"
+                continue
+            fi
+            
             log "INFO" "Executing $func..."
             if ! $func; then
                 log "ERROR" "Failed to execute $func"
