@@ -43,13 +43,13 @@ log() {
     local message=$2
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local log_message="[$level] $timestamp: $message"
-    
+
     # Log to file
     echo "$log_message" | sudo tee -a "$LOG_FILE" >/dev/null
-    
+
     # Log to syslog
     logger -t "security_hardening" -p "local0.$level" "$message"
-    
+
     # Display if verbose mode is enabled
     $VERBOSE && echo "$log_message"
 }
@@ -59,9 +59,9 @@ handle_error() {
     local error_message=$1
     local error_code=${2:-1}
     local stack_trace=$(caller)
-    
+
     log "ERROR" "Error Code $error_code: $error_message at line $stack_trace"
-    
+
     # Create error report
     local error_report="${BACKUP_DIR}/error_report_$(date +%s).txt"
     {
@@ -74,32 +74,32 @@ handle_error() {
         echo "Last 10 lines of log:"
         tail -n 10 "$LOG_FILE"
     } > "$error_report"
-    
+
     # Attempt recovery if possible
     if [ "$error_code" -eq 2 ]; then
         log "INFO" "Attempting recovery procedure..."
         perform_recovery
     fi
-    
+
     exit "$error_code"
 }
 
 # Function to validate system requirements
 check_requirements() {
     log "INFO" "Checking system requirements..."
-    
+
     # Check OS compatibility
     if ! command -v lsb_release &>/dev/null; then
         handle_error "lsb_release command not found. This script requires an Ubuntu-based system." 2
     fi
-    
+
     local os_name=$(lsb_release -si)
     local os_version=$(lsb_release -sr)
-    
+
     if [[ "$os_name" != "Ubuntu" && "$os_name" != "Debian" ]]; then
         handle_error "This script is designed for Ubuntu or Debian-based systems. Detected OS: $os_name" 3
     fi
-    
+
     # Version check with proper version comparison
     if [[ "$os_name" == "Ubuntu" ]]; then
         if ! awk -v ver="$os_version" 'BEGIN { if (ver < 18.04) exit 1; }'; then
@@ -110,44 +110,44 @@ check_requirements() {
             handle_error "This script requires Debian 12.0 or later. Detected version: $os_version" 5
         fi
     fi
-    
+
     # Check for required tools
-    local required_tools=("wget" "curl" "apt" "systemctl" "openssl")
+    local required_tools=("wget" "curl" "apt" "systemctl" "openssl" "auditd" "mailutils")
     for tool in "${required_tools[@]}"; do
         if ! command -v "$tool" &>/dev/null; then
-            handle_error "Required tool '$tool' is not installed." 6
+          install_package "$tool"
         fi
     done
-    
+
     # Check disk space
     local required_space=5120  # 5GB in MB
     local available_space=$(df -m / | awk 'NR==2 {print $4}')
     if [ "$available_space" -lt "$required_space" ]; then
         handle_error "Insufficient disk space. Required: ${required_space}MB, Available: ${available_space}MB" 7
     fi
-    
+
     # Check memory
     local required_memory=1024  # 1GB in MB
     local available_memory=$(free -m | awk '/Mem:/ {print $2}')
     if [ "$available_memory" -lt "$required_memory" ]; then
         handle_error "Insufficient memory. Required: ${required_memory}MB, Available: ${available_memory}MB" 8
     fi
-    
+
     # Network connectivity check
     if ! ping -c 1 8.8.8.8 &>/dev/null; then
         handle_error "No network connectivity detected" 9
     fi
-    
+
     log "INFO" "System requirements check passed. OS: $os_name $os_version"
 }
 
 # Enhanced backup function with integrity verification
 backup_files() {
     log "INFO" "Creating system backup..."
-    
+
     # Create backup directory with secure permissions
     sudo install -d -m 0700 "$BACKUP_DIR" || handle_error "Failed to create backup directory" 10
-    
+
     local files_to_backup=(
         "/etc/default/grub"
         "/etc/ssh/sshd_config"
@@ -160,43 +160,43 @@ backup_files() {
         "/etc/apparmor/parser.conf"
         "/etc/default/ufw"
     )
-    
+
     # Create backup manifest
     local manifest_file="${BACKUP_DIR}/manifest.txt"
     echo "Backup created on $(date)" > "$manifest_file"
     echo "System Information:" >> "$manifest_file"
     uname -a >> "$manifest_file"
-    
+
     # Backup files with checksums
     for file in "${files_to_backup[@]}"; do
         if [ -f "$file" ]; then
             # Create directory structure
             sudo mkdir -p "${BACKUP_DIR}$(dirname "$file")"
-            
+
             # Copy file with permissions
             sudo cp -p "$file" "${BACKUP_DIR}${file}" || {
                 log "WARNING" "Failed to backup $file"
                 continue
             }
-            
+
             # Generate checksum
             sha256sum "${BACKUP_DIR}${file}" >> "${BACKUP_DIR}/checksums.txt"
-            
+
             # Add to manifest
             echo "Backed up: $file" >> "$manifest_file"
         else
             log "WARNING" "File not found, skipping backup: $file"
         fi
     done
-    
+
     # Create compressed archive of backup
     sudo tar -czf "${BACKUP_DIR}.tar.gz" -C "$(dirname "$BACKUP_DIR")" "$(basename "$BACKUP_DIR")" || {
         handle_error "Failed to create backup archive" 11
     }
-    
+
     # Generate checksum for the archive
     sha256sum "${BACKUP_DIR}.tar.gz" > "${BACKUP_DIR}.tar.gz.sha256"
-    
+
     log "INFO" "Backup created successfully in $BACKUP_DIR"
     log "INFO" "Backup archive created: ${BACKUP_DIR}.tar.gz"
 }
@@ -204,47 +204,47 @@ backup_files() {
 # Enhanced restore function with integrity checking
 restore_backup() {
     local backup_path=$1
-    
+
     if [ ! -f "${backup_path}.tar.gz" ]; then
         handle_error "Backup archive not found: ${backup_path}.tar.gz" 12
     fi
-    
+
     # Verify archive checksum
     if ! sha256sum -c "${backup_path}.tar.gz.sha256"; then
         handle_error "Backup archive integrity check failed" 13
     fi
-    
+
     # Extract archive
     sudo tar -xzf "${backup_path}.tar.gz" -C / || handle_error "Failed to extract backup archive" 14
-    
+
     # Verify individual file checksums
     while IFS= read -r line; do
         local checksum=$(echo "$line" | cut -d' ' -f1)
         local file=$(echo "$line" | cut -d' ' -f3-)
-        
+
         if ! echo "$checksum  $file" | sha256sum -c --quiet; then
             log "WARNING" "Checksum verification failed for: $file"
         fi
     done < "${backup_path}/checksums.txt"
-    
+
     log "INFO" "System restore completed from $backup_path"
 }
 
 # Enhanced firewall configuration function
 setup_firewall() {
     log "INFO" "Configuring advanced firewall settings..."
-    
+
     # Install required packages
     install_package "ufw"
     install_package "iptables-persistent"
-    
+
     # Basic UFW configuration
     sudo ufw default deny incoming || handle_error "Failed to set UFW default incoming policy" 15
     sudo ufw default allow outgoing || handle_error "Failed to set UFW default outgoing policy" 16
-    
+
     # Configure rate limiting for SSH
     sudo ufw limit ssh comment 'Allow SSH with rate limiting' || handle_error "Failed to configure SSH in UFW" 17
-    
+
     # Configure common services
     declare -A services=(
         ["http"]="80"
@@ -252,24 +252,24 @@ setup_firewall() {
         ["dns"]="53"
         ["ntp"]="123"
     )
-    
+
     for service in "${!services[@]}"; do
         local port="${services[$service]}"
         sudo ufw allow "$port/tcp" comment "Allow $service" || log "WARNING" "Failed to allow $service in UFW"
     done
-    
+
     # Configure advanced rules
     if [ "${CONFIG[NETWORK_SEGMENTATION]}" = "true" ]; then
         # Allow internal network communication
         sudo ufw allow from 192.168.0.0/16 to any || log "WARNING" "Failed to configure internal network rules"
-        
+
         # Configure DMZ if applicable
         if [ -n "$DMZ_NETWORK" ]; then
             sudo ufw allow from "$DMZ_NETWORK" to any port 80 || log "WARNING" "Failed to configure DMZ rules"
             sudo ufw allow from "$DMZ_NETWORK" to any port 443 || log "WARNING" "Failed to configure DMZ rules"
         fi
     fi
-    
+
     # IPv6 configuration
     if [ "${CONFIG[IPV6_ENABLED]}" = "true" ]; then
         log "INFO" "Configuring IPv6 firewall rules..."
@@ -280,29 +280,29 @@ setup_firewall() {
         log "INFO" "Disabling IPv6 firewall rules..."
         sudo sed -i 's/IPV6=yes/IPV6=no/' /etc/default/ufw
     fi
-    
+
     # Enable logging
     sudo ufw logging on || handle_error "Failed to enable UFW logging" 18
-    
+
     # Apply rules
     if ! $DRY_RUN; then
         sudo ufw --force enable || handle_error "Failed to enable UFW" 19
-        
+
         # Verify firewall status
         if ! sudo ufw status verbose | grep -q "Status: active"; then
             handle_error "Firewall is not active after configuration" 20
         fi
     fi
-    
+
     log "INFO" "Firewall configuration completed"
 }
 
 # Enhanced fail2ban configuration
 setup_fail2ban() {
     log "INFO" "Configuring Fail2Ban..."
-    
+
     install_package "fail2ban"
-    
+
     # Create custom configuration
     local f2b_config="/etc/fail2ban/jail.local"
     cat << EOF | sudo tee "$f2b_config" > /dev/null
@@ -346,7 +346,7 @@ maxretry = 100
 findtime = 5m
 bantime = 2h
 EOF
-    
+
     # Create custom filter for HTTP DoS protection
     local dos_filter="/etc/fail2ban/filter.d/http-get-dos.conf"
     cat << EOF | sudo tee "$dos_filter" > /dev/null
@@ -354,25 +354,25 @@ EOF
 failregex = ^<HOST> -.*"(GET|POST).*
 ignoreregex =
 EOF
-    
+
     # Enable and start service
     sudo systemctl enable fail2ban || handle_error "Failed to enable Fail2Ban service" 21
     sudo systemctl start fail2ban || handle_error "Failed to start Fail2Ban service" 22
-    
+
     # Verify service status
     if ! sudo systemctl is-active --quiet fail2ban; then
         handle_error "Fail2Ban service is not running after configuration" 23
     fi
-    
+
     log "INFO" "Fail2Ban configuration completed"
 }
 
 # Enhanced audit configuration with STIG compliance
 setup_audit() {
     log "INFO" "Configuring advanced audit system..."
-    
+
     install_package "auditd"
-    
+
     # Configure main audit settings
     local audit_conf="/etc/audit/auditd.conf"
     cat << EOF | sudo tee "$audit_conf" > /dev/null
@@ -501,7 +501,7 @@ configure_password_policy() {
 
     # Install required packages
     install_package "libpam-pwquality"
-    
+
     # Configure PAM password quality requirements
     local pwquality_conf="/etc/security/pwquality.conf"
     cat << EOF | sudo tee "$pwquality_conf" > /dev/null
@@ -757,33 +757,33 @@ setup_mandatory_access_control() {
         # Setup SELinux
         install_package "selinux-basics"
         install_package "selinux-policy-default"
-        
+
         # Configure SELinux policy
         sudo selinux-activate || handle_error "Failed to activate SELinux" 30
-        
+
         # Set SELinux to enforcing mode
         sudo setenforce 1 || log "WARNING" "Failed to set SELinux to enforcing mode"
-        
+
         # Configure SELinux policy in config file
         sudo sed -i 's/SELINUX=.*/SELINUX=enforcing/' /etc/selinux/config
-        
+
     elif [ "${CONFIG[APPARMOR_ENABLED]}" = "true" ]; then
         # Setup AppArmor
         install_package "apparmor"
         install_package "apparmor-utils"
         install_package "apparmor-profiles"
-        
+
         # Enable AppArmor
         sudo systemctl enable apparmor || handle_error "Failed to enable AppArmor" 31
         sudo systemctl start apparmor || handle_error "Failed to start AppArmor" 32
-        
+
         # Set all profiles to enforce mode
         sudo aa-enforce /etc/apparmor.d/* || log "WARNING" "Failed to enforce some AppArmor profiles"
-        
+
         # Create custom AppArmor profile for critical services
         create_custom_apparmor_profiles
     fi
-    
+
     log "INFO" "Mandatory Access Control configured successfully"
 }
 
@@ -828,7 +828,7 @@ profile sshd /usr/sbin/sshd {
     /proc/sys/kernel/ngroups_max r,
     /run/utmp rk,
     @{HOME}/.ssh/authorized_keys r,
-    
+
     # Add support for OPKSSH auth helper
     /usr/local/bin/opk-ssh-auth-helper PUx,
     /etc/ssh/opk_trusted_user_ca_keys.pem r,
@@ -837,7 +837,8 @@ profile sshd /usr/sbin/sshd {
 EOF
 
     # Reload AppArmor profiles
-    sudo apparmor_parser -r /etc/apparmor.d/* || log "WARNING" "Failed to reload AppArmor profiles"
+    sudo find /etc/apparmor.d/ -type f -exec grep -L '^#include' {} \; -exec sudo apparmor_parser -r {} \;
+    sudo service apparmor reload  || log "WARNING" "Failed to reload AppArmor profiles"
 }
 
 # Function to setup secure boot configuration
@@ -849,38 +850,42 @@ setup_secure_boot() {
         # Install required packages
         install_package "grub-efi-amd64-signed"
         install_package "shim-signed"
-        
+
         # Configure GRUB security settings
         local grub_config="/etc/default/grub"
-        
+
         # Backup original configuration
         sudo cp "$grub_config" "${grub_config}.backup"
-        
+
         # Update GRUB security parameters
         sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="quiet splash module.sig_enforce=1 lockdown=confidentiality init_on_alloc=1 init_on_free=1 page_alloc.shuffle=1 slab_nomerge vsyscall=none"/' "$grub_config"
-        
+
         # Set GRUB password
         local grub_password
         read -s -p "Enter GRUB password: " grub_password
         echo
-        
+
         # Generate GRUB password hash
         local password_hash
         password_hash=$(echo -e "$grub_password\n$grub_password" | grub-mkpasswd-pbkdf2 | awk '/hash of/ {print $NF}')
-        
+
         # Add password protection to GRUB
         cat << EOF | sudo tee /etc/grub.d/40_custom > /dev/null
+#!/bin/sh
+
+tail -f -n +3 \$0
+
 set superusers="admin"
 password_pbkdf2 admin $password_hash
 EOF
-        
+
         # Update GRUB configuration
         sudo update-grub || handle_error "Failed to update GRUB configuration" 33
-        
+
         # Secure boot directory permissions
         sudo chmod 700 /boot/grub
         sudo chmod 600 /boot/grub/grub.cfg
-        
+
         log "INFO" "Secure boot configured successfully"
     else
         log "WARNING" "System is not UEFI-based, skipping secure boot configuration"
@@ -925,7 +930,7 @@ EOF
 
     # Configure network isolation rules
     setup_network_isolation_rules
-    
+
     log "INFO" "Network segmentation configured successfully"
 }
 
@@ -1058,7 +1063,7 @@ EOF
 # Function to setup CrowdSec
 setup_crowdsec() {
     log "INFO" "Configuring CrowdSec..."
-    
+
     # Install CrowdSec
     log "INFO" "Installing CrowdSec..."
     if ! command -v cscli &>/dev/null; then
@@ -1067,37 +1072,37 @@ setup_crowdsec() {
     else
         log "INFO" "CrowdSec is already installed"
     fi
-    
+
     # Install CrowdSec firewall bouncer
     log "INFO" "Installing CrowdSec firewall bouncer..."
     install_package "crowdsec-firewall-bouncer"
-    
+
     # Configure CrowdSec
     log "INFO" "Configuring CrowdSec..."
-    
+
     # Enable community sharing
     log "INFO" "Registering with CrowdSec community..."
     sudo cscli capi register || log "WARNING" "Failed to register with CrowdSec community"
-    
+
     # Install collections for common threats
     log "INFO" "Installing CrowdSec collections..."
     sudo cscli collections install crowdsecurity/linux
     sudo cscli collections install crowdsecurity/sshd
     sudo cscli collections install crowdsecurity/http-cve
-    
+
     # Install parsers for common services
     log "INFO" "Installing CrowdSec parsers..."
     sudo cscli parsers install crowdsecurity/whitelists
     sudo cscli parsers install crowdsecurity/sshd
     sudo cscli parsers install crowdsecurity/nginx
     sudo cscli parsers install crowdsecurity/apache2
-    
+
     # Configure CrowdSec to work with local firewall
     if [ "${CONFIG[FIREWALL_ENABLED]}" = "true" ]; then
         log "INFO" "Configuring CrowdSec with local firewall..."
         # Add a bouncer for the firewall
         BOUNCER_KEY=$(sudo cscli bouncers add firewall-bouncer -o raw)
-        
+
         # Configure the bouncer
         cat << EOF | sudo tee /etc/crowdsec/bouncers/firewall-bouncer.yaml > /dev/null
 api_url: http://127.0.0.1:8080/
@@ -1111,7 +1116,7 @@ log_dir: /var/log/
 log_level: info
 EOF
     fi
-    
+
     # Integrate with UFW if enabled
     if [ "${CONFIG[FIREWALL_ENABLED]}" = "true" ]; then
         log "INFO" "Integrating CrowdSec with UFW..."
@@ -1130,46 +1135,46 @@ deny_action: DROP
 deny_log: true
 EOF
     fi
-    
+
     # Start and enable CrowdSec service
     sudo systemctl enable crowdsec || handle_error "Failed to enable CrowdSec service" 45
     sudo systemctl restart crowdsec || handle_error "Failed to start CrowdSec service" 46
-    
+
     # Start and enable bouncer
     sudo systemctl enable cs-firewall-bouncer || handle_error "Failed to enable CrowdSec firewall bouncer" 47
     sudo systemctl restart cs-firewall-bouncer || handle_error "Failed to start CrowdSec firewall bouncer" 48
-    
+
     # Verify CrowdSec status
     if ! sudo systemctl is-active --quiet crowdsec; then
         handle_error "CrowdSec service is not running after configuration" 49
     fi
-    
+
     log "INFO" "CrowdSec configuration completed successfully"
 }
 
 # Function to setup Cloudflare OPKSSH SSO for SSH
 setup_opkssh_auth() {
     log "INFO" "Configuring Cloudflare OPKSSH SSO for SSH authentication..."
-    
+
     # Install required packages
     install_package "curl"
     install_package "openssh-server"
     install_package "jq"
-    
+
     # Create directory for OPKSSH
     sudo mkdir -p /etc/opkssh
     sudo chmod 755 /etc/opkssh
-    
+
     # Download and install OPKSSH binaries
     log "INFO" "Downloading OPKSSH binaries..."
     sudo curl -sL https://github.com/cloudflare/opk/releases/latest/download/opk-ssh-auth-helper -o /usr/local/bin/opk-ssh-auth-helper
     sudo chmod +x /usr/local/bin/opk-ssh-auth-helper
-    
+
     # Download Cloudflare CA keys
     log "INFO" "Downloading Cloudflare CA keys..."
     sudo curl -s https://developers.cloudflare.com/cdn-cgi/access/certificates/opk_ca_keys.pem -o /etc/ssh/opk_trusted_user_ca_keys.pem
     sudo chmod 644 /etc/ssh/opk_trusted_user_ca_keys.pem
-    
+
     # Configure SSH server to use OPKSSH
     log "INFO" "Configuring SSH to use OPKSSH..."
     cat << EOF | sudo tee /etc/ssh/sshd_config.d/60-opkssh.conf > /dev/null
@@ -1181,14 +1186,14 @@ EOF
 
     # Create OPKSSH configuration
     log "INFO" "Creating OPKSSH configuration..."
-    
+
     # Prompt for Cloudflare Zero Trust configuration
     echo "Please enter your Cloudflare Zero Trust team domain (example.cloudflareaccess.com):"
     read -r team_domain
-    
+
     echo "Please enter your SSH application domain (ssh.example.com):"
     read -r app_domain
-    
+
     # Create OPKSSH configuration file
     cat << EOF | sudo tee /etc/opkssh/config.json > /dev/null
 {
@@ -1198,23 +1203,23 @@ EOF
     "log_level": "info"
 }
 EOF
-    
+
     # Secure the configuration file
     sudo chmod 644 /etc/opkssh/config.json
-    
+
     # Prompt for service token
     echo "Please enter your Cloudflare Access service token (will be hidden):"
     read -s service_token
     echo "$service_token" | sudo tee /etc/opkssh/service_token > /dev/null
     sudo chmod 600 /etc/opkssh/service_token
-    
+
     # Verify and restart SSH
     log "INFO" "Verifying SSH configuration..."
     sudo sshd -t || handle_error "SSH configuration is invalid" 50
-    
+
     # Restart SSH service
     sudo systemctl restart ssh || handle_error "Failed to restart SSH service" 51
-    
+
     log "INFO" "Cloudflare OPKSSH SSO for SSH configured successfully"
     log "INFO" "Users can now authenticate using Cloudflare Zero Trust identity"
 }
@@ -1223,22 +1228,22 @@ EOF
 main() {
     local start_time=$(date +%s)
     local error_count=0
-    
+
     # Parse command line arguments and set initial configuration
     parse_arguments "$@"
 
     # Create backup directory with secure permissions
     sudo install -d -m 0700 "$BACKUP_DIR" || handle_error "Failed to create backup directory" 10
-    
+
     # Validate environment and requirements
     check_requirements
-    
+
     # Create backup
     backup_files
-    
+
     # Load configuration
     load_configuration
-    
+
     # Execute security hardening functions in sequence
     if ! $DRY_RUN; then
         local functions=(
@@ -1256,18 +1261,18 @@ main() {
             "setup_crowdsec"
             "setup_opkssh_auth"
         )
-        
+
         for func in "${functions[@]}"; do
             # Skip function if disabled in config
             local config_key="${func^^}"
             config_key="${config_key#SETUP_}"
             config_key="${config_key}_ENABLED"
-            
+
             if [[ -n "${CONFIG[$config_key]}" && "${CONFIG[$config_key]}" == "false" ]]; then
                 log "INFO" "Skipping $func (disabled in configuration)"
                 continue
             fi
-            
+
             log "INFO" "Executing $func..."
             if ! $func; then
                 log "ERROR" "Failed to execute $func"
@@ -1278,16 +1283,16 @@ main() {
             fi
         done
     fi
-    
+
     # Calculate execution time
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
-    
+
     # Generate completion report
     generate_completion_report "$duration" "$error_count"
-    
+
     log "INFO" "Security hardening completed in $duration seconds with $error_count errors"
-    
+
     # Prompt for system restart if needed
     if ! $DRY_RUN && [ $error_count -eq 0 ]; then
         prompt_restart
