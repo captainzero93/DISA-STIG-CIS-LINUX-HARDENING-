@@ -868,7 +868,7 @@ setup_secure_boot() {
 
         # Generate GRUB password hash
         local password_hash
-        password_hash=$(echo -e "$grub_password\n$grub_password" | grub-mkpasswd-pbkdf2 | awk '/hash of/ {print $NF}')
+        password_hash=$(echo -e "$grub_password\n$grub_password" | grub-mkpasswd-pbkdf2 | awk '/grub\.pbkdf2/ { print $NF }')
 
         # Add password protection to GRUB
         cat << EOF | sudo tee /etc/grub.d/40_custom > /dev/null
