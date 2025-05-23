@@ -845,8 +845,9 @@ EOF
 setup_secure_boot() {
     log "INFO" "Configuring secure boot settings..."
 
-    # Check if system is UEFI-based
-    if [ -d "/sys/firmware/efi" ]; then
+
+    # Check if GRUB is installed
+    if command -v grub-install > /dev/null 2>&1; then
         # Install required packages
         install_package "grub-efi-amd64-signed"
         install_package "shim-signed"
@@ -872,8 +873,7 @@ setup_secure_boot() {
         # Add password protection to GRUB
         cat << EOF | sudo tee /etc/grub.d/40_custom > /dev/null
 #!/bin/sh
-
-tail -f -n +3 \$0
+exec tail -n +3 \$0
 
 set superusers="admin"
 password_pbkdf2 admin $password_hash
@@ -888,7 +888,7 @@ EOF
 
         log "INFO" "Secure boot configured successfully"
     else
-        log "WARNING" "System is not UEFI-based, skipping secure boot configuration"
+        log "WARNING" "System does not use GRUB, skipping secure boot configuration"
     fi
 }
 
@@ -1247,6 +1247,7 @@ main() {
     # Execute security hardening functions in sequence
     if ! $DRY_RUN; then
         local functions=(
+            "setup_secure_boot"
             "setup_firewall"
             "setup_fail2ban"
             "setup_audit"
@@ -1255,7 +1256,6 @@ main() {
             "setup_usb_control"
             "setup_file_integrity"
             "setup_mandatory_access_control"
-            "setup_secure_boot"
             "setup_network_segmentation"
             "setup_security_monitoring"
             "setup_crowdsec"
