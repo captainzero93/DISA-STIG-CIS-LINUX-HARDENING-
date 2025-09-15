@@ -364,6 +364,3 @@ This project is licensed under the MIT License - see LICENSE file for details.
 - Core hardening features
 - Three-tier profile system
 
----
-
-**Remember**: Security is a journey, not a destination. Regularly review and update your security configurations.
