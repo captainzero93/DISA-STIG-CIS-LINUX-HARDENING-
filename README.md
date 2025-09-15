@@ -215,7 +215,7 @@ sudo security-hardening --profile advanced --email admin@example.com
 # Report saved to /root/security_backup_*/compliance_report_*.html
 ```
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
