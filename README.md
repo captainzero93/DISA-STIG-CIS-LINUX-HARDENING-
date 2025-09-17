@@ -5,6 +5,7 @@ A comprehensive, enterprise-grade security hardening solution for Ubuntu and Deb
 ## Features
 
 ### Core Security Features
+
 - **SSH Hardening**: Modern cryptography, key-based authentication, rate limiting
 - **Firewall Configuration**: UFW with advanced rules and rate limiting
 - **Kernel Hardening**: Sysctl security parameters, module restrictions
@@ -16,6 +17,7 @@ A comprehensive, enterprise-grade security hardening solution for Ubuntu and Deb
 - **Secure Boot**: GRUB password protection and secure boot configuration
 
 ### Advanced Features (v3.2)
+
 - **Encrypted Credential Vault**: Secure storage for sensitive data using age encryption
 - **CrowdSec Integration**: Community-based threat intelligence and blocking
 - **Cloudflare OPKSSH SSO**: Zero Trust SSH authentication support
@@ -27,6 +29,7 @@ A comprehensive, enterprise-grade security hardening solution for Ubuntu and Deb
 ## Requirements
 
 ### System Requirements
+
 - **OS**: Ubuntu 18.04+ or Debian 12.0+
 - **Architecture**: x86_64 (amd64)
 - **Memory**: Minimum 1GB RAM
@@ -35,6 +38,7 @@ A comprehensive, enterprise-grade security hardening solution for Ubuntu and Deb
 - **Privileges**: Root or sudo access required
 
 ### Dependencies (automatically installed)
+
 - wget, curl, git
 - openssl, mailutils
 - auditd, ufw, fail2ban
@@ -44,12 +48,13 @@ A comprehensive, enterprise-grade security hardening solution for Ubuntu and Deb
 ## Installation
 
 ### Quick Install
+
 ```bash
 # Clone the repository
 git clone https://github.com/captainzero93/DISA-STIG-CIS-LINUX-HARDENING-.git
 cd DISA-STIG-CIS-LINUX-HARDENING-
 
-# Make installer executable
+# Make installer executable id needed
 chmod +x install.sh
 
 # Run installer as root
@@ -57,6 +62,7 @@ sudo ./install.sh
 ```
 
 ### Manual Installation
+
 ```bash
 # Create directories
 sudo mkdir -p /opt/security-hardening/lib
@@ -65,12 +71,13 @@ sudo mkdir -p /var/log/security-hardening
 
 # Copy files
 sudo cp enhanced_security_hardening.sh /opt/security-hardening/
-sudo cp lib/utils.sh /opt/security-hardening/lib/
-sudo cp security_config.conf /etc/security-hardening/
+sudo cp -r lib/*.sh /opt/security-hardening/lib/
+sudo cp dependencies.txt /opt/security-hardening/lib/
+sudo cp conf/security_config.conf /etc/security-hardening/
 
 # Set permissions
 sudo chmod 755 /opt/security-hardening/enhanced_security_hardening.sh
-sudo chmod 644 /opt/security-hardening/lib/utils.sh
+sudo chmod -R 644 /opt/security-hardening/lib
 
 # Create symlink
 sudo ln -s /opt/security-hardening/enhanced_security_hardening.sh /usr/local/bin/security-hardening
@@ -79,6 +86,7 @@ sudo ln -s /opt/security-hardening/enhanced_security_hardening.sh /usr/local/bin
 ## Usage
 
 ### Basic Usage
+
 ```bash
 # Run with default (advanced) profile
 sudo security-hardening
@@ -96,6 +104,7 @@ sudo security-hardening --config /path/to/config.conf
 ```
 
 ### Command Line Options
+
 | Option | Description |
 |--------|-------------|
 | `-v, --verbose` | Enable verbose output |
@@ -104,16 +113,19 @@ sudo security-hardening --config /path/to/config.conf
 | `-c, --config FILE` | Use custom configuration file |
 | `-e, --email EMAIL` | Set email for security reports |
 | `-b, --backup-dir DIR` | Custom backup directory |
-| `--skip-backup` | Skip backup creation |
-| `--skip-firewall` | Skip firewall configuration |
-| `--skip-audit` | Skip audit configuration |
-| `--enable-ipv6` | Enable IPv6 support |
+| `-sb, --skip-backup` | Skip backup creation |
+| `-sf, --skip-firewall` | Skip firewall configuration |
+| `-sa, --skip-audit` | Skip audit configuration |
+| `-6, --enable-ipv6` | Enable IPv6 support |
+| `-r, --restore` | Restore backup from specified directory or default |
 | `-h, --help` | Show help message |
 
 ## Security Profiles
 
 ### Basic Profile
+
 Essential security hardening for general-purpose systems:
+
 - SSH hardening
 - Basic firewall rules
 - Password policies
@@ -121,7 +133,9 @@ Essential security hardening for general-purpose systems:
 - Audit logging
 
 ### Intermediate Profile
+
 Standard security for production environments:
+
 - Everything from Basic
 - Fail2ban intrusion prevention
 - File integrity monitoring (AIDE)
@@ -129,7 +143,9 @@ Standard security for production environments:
 - CrowdSec threat intelligence
 
 ### Advanced Profile
+
 Maximum security for high-risk environments:
+
 - Everything from Intermediate
 - USB device control
 - Network segmentation support
@@ -141,6 +157,7 @@ Maximum security for high-risk environments:
 ## Configuration
 
 ### Configuration File
+
 Edit `/etc/security-hardening/security_config.conf`:
 
 ```bash
@@ -167,13 +184,17 @@ NETWORK_SEGMENTATION=false
 ```
 
 ### Email Notifications
+
 Configure email for security reports:
+
 ```bash
 sudo security-hardening --email admin@example.com --profile advanced
 ```
 
 ### Automated Execution
+
 Enable weekly security checks:
+
 ```bash
 # Enable systemd timer
 sudo systemctl enable --now security-hardening.timer
@@ -188,6 +209,7 @@ sudo systemctl list-timers security-hardening.timer
 ## Validation
 
 ### Check Applied Settings
+
 ```bash
 # Verify firewall status
 sudo ufw status verbose
@@ -209,7 +231,9 @@ sudo sysctl -a | grep -E "net.ipv4|kernel"
 ```
 
 ### Compliance Report
+
 Generate HTML compliance report:
+
 ```bash
 sudo security-hardening --profile advanced --email admin@example.com
 # Report saved to /root/security_backup_*/compliance_report_*.html
@@ -220,15 +244,18 @@ sudo security-hardening --profile advanced --email admin@example.com
 ### Common Issues
 
 #### SSH Access Lost
+
 1. Boot into recovery mode
 2. Mount root filesystem as read-write
 3. Restore SSH configuration:
+
    ```bash
    cp /root/security_backup_*/etc/ssh/sshd_config /etc/ssh/
    systemctl restart ssh
    ```
 
 #### Firewall Blocking Services
+
 ```bash
 # Temporarily disable firewall
 sudo ufw disable
@@ -242,15 +269,18 @@ sudo ufw enable
 ```
 
 #### System Won't Boot
+
 1. Boot from live USB
 2. Mount system partition
 3. Restore GRUB configuration:
+
    ```bash
    cp /mnt/root/security_backup_*/etc/default/grub /mnt/etc/default/
    chroot /mnt update-grub
    ```
 
 ### Recovery Options
+
 ```bash
 # Basic recovery (restart services)
 sudo /opt/security-hardening/enhanced_security_hardening.sh --recovery basic
@@ -263,6 +293,7 @@ sudo /opt/security-hardening/enhanced_security_hardening.sh --recovery full
 ```
 
 ### Log Files
+
 - Main log: `/var/log/security_hardening.log`
 - Audit logs: `/var/log/audit/audit.log`
 - Firewall logs: `/var/log/ufw.log`
@@ -272,6 +303,7 @@ sudo /opt/security-hardening/enhanced_security_hardening.sh --recovery full
 ## Compliance Standards
 
 This suite implements controls from:
+
 - **DISA STIG**: Defense Information Systems Agency Security Technical Implementation Guides
 - **CIS Benchmarks**: Center for Internet Security Benchmarks
 - **NSA Guidelines**: National Security Agency Hardening Guidelines
@@ -281,13 +313,15 @@ This suite implements controls from:
 ## Updates and Maintenance
 
 ### Update the Suite
+
 ```bash
-cd /opt/security-hardening
+cd DISA-STIG-CIS-LINUX-HARDENING-
 git pull origin main
 sudo ./install.sh
 ```
 
 ### Regular Maintenance
+
 1. Review logs weekly: `/var/log/security_hardening.log`
 2. Update AIDE database monthly: `sudo aideinit --yes --force`
 3. Review compliance reports quarterly
@@ -306,21 +340,27 @@ sudo ./install.sh
 ## Customization
 
 ### Adding Custom Audit Rules
+
 Edit `/etc/audit/rules.d/audit.rules` and add your rules:
+
 ```bash
 -w /etc/custom/app -p wa -k custom_app
 -w /var/www/html -p wa -k web_content
 ```
 
 ### Custom AppArmor Profiles
+
 Create profiles in `/etc/apparmor.d/`:
+
 ```bash
 sudo aa-genprof /usr/bin/custom-app
 sudo aa-enforce /etc/apparmor.d/usr.bin.custom-app
 ```
 
 ### Firewall Exceptions
+
 Add custom UFW rules:
+
 ```bash
 sudo ufw allow from 192.168.1.0/24 to any port 3306
 sudo ufw allow 8080/tcp comment 'Custom web app'
@@ -329,6 +369,7 @@ sudo ufw allow 8080/tcp comment 'Custom web app'
 ## Contributing
 
 Contributions are welcome! Please:
+
 1. Fork the repository
 2. Create a feature branch
 3. Test thoroughly
@@ -348,6 +389,7 @@ This project is licensed under the MIT License - see LICENSE file for details.
 ## Version History
 
 ### v3.2 (Current)
+
 - Added encrypted credential vault
 - Enhanced SSH hardening with modern cryptography
 - Improved compliance reporting
@@ -355,12 +397,13 @@ This project is licensed under the MIT License - see LICENSE file for details.
 - Service hardening with systemd
 
 ### v3.1
+
 - CrowdSec integration
 - Cloudflare OPKSSH SSO support
 - Enhanced audit rules
 
 ### v3.0
+
 - Initial public release
 - Core hardening features
 - Three-tier profile system
-

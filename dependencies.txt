@@ -1,0 +1,9 @@
+wget
+curl
+git
+openssl
+mailutils
+lsb-release
+net-tools
+iptables
+

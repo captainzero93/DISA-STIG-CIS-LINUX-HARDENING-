@@ -1,0 +1,10 @@
+# vim tags
+tags
+
+# backups
+backups/
+backups.tar.gz
+backups.tar.gz.sha256
+
+# logs
+security_hardening.log

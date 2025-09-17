@@ -4,23 +4,43 @@
 
 set -e
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+# Runtime variables
+readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly REPO_URL="$(git remote get-url origin 2>/dev/null | sed 's/git@github.com:/https:\/\/github.com\//; s/\.git$//' 2>/dev/null)"
 
 # Installation directories
-INSTALL_DIR="/opt/security-hardening"
-BIN_DIR="/usr/local/bin"
-CONFIG_DIR="/etc/security-hardening"
-LOG_DIR="/var/log/security-hardening"
-LIB_DIR="$INSTALL_DIR/lib"
+readonly INSTALL_DIR="/opt/security-hardening"
+readonly BIN_DIR="/usr/local/bin"
+readonly CONFIG_DIR="/etc/security-hardening"
+readonly LOG_DIR="/var/log/security-hardening"
+readonly LIB_DIR="$INSTALL_DIR/lib"
+readonly DEPENDENCIES_FILE="$SCRIPT_DIR/dependencies.txt"
 
 # Script files
-MAIN_SCRIPT="enhanced_security_hardening.sh"
-UTILS_SCRIPT="utils.sh"
-CONFIG_FILE="security_config.conf"
+readonly MAIN_SCRIPT="enhanced_security_hardening.sh"
+readonly CONFIG_FILE="security_config.conf"
+
+IMPORTS=(
+  "$SCRIPT_DIR/lib/dependencies.sh"
+  "$SCRIPT_DIR/lib/utils.sh"
+  "$SCRIPT_DIR/lib/color.sh"
+)
+# Imports
+for file in "${IMPORTS[@]}"; do
+  source "$file" 2>/dev/null || {
+    echo "Error: Unable to source $file"
+    exit 1
+  }
+done
+
+# Import utilities functions
+source "$SCRIPT_DIR/lib/utils.sh" 2>/dev/null || {
+  echo "Error: Unable to source dependencies.sh"
+  exit 1
+}
+
+# Check if running as root
+is_root
 
 echo -e "${GREEN}================================================${NC}"
 echo -e "${GREEN}   Security Hardening Suite Installation${NC}"
@@ -64,27 +84,25 @@ chmod 755 "$LOG_DIR"
 echo -e "${YELLOW}Installing script files...${NC}"
 
 # Check if scripts exist in current directory
-if [ ! -f "$MAIN_SCRIPT" ]; then
-  echo -e "${RED}Error: $MAIN_SCRIPT not found in current directory${NC}"
-  exit 1
-fi
-
-if [ ! -f "lib/$UTILS_SCRIPT" ]; then
-  echo -e "${RED}Error: lib/$UTILS_SCRIPT not found${NC}"
+if [ ! -f "$SCRIPT_DIR/main.sh" ]; then
+  echo -e "${RED}Error: main.sh not found in current directory${NC}"
   exit 1
 fi
 
 # Copy main script
-cp "$MAIN_SCRIPT" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/main.sh" "$INSTALL_DIR/$MAIN_SCRIPT"
 chmod 755 "$INSTALL_DIR/$MAIN_SCRIPT"
 
 # Copy utils library
-cp "lib/$UTILS_SCRIPT" "$LIB_DIR/"
-chmod 644 "$LIB_DIR/$UTILS_SCRIPT"
+cp -r "$SCRIPT_DIR/lib" "$INSTALL_DIR/"
+cp "$SCRIPT_DIR/dependencies.txt" "$INSTALL_DIR/"
+echo "REPO_URL=\"$REPO_URL\"" >>"$INSTALL_DIR/lib/config.sh"
+chmod -R 644 "$LIB_DIR/"
 
 # Copy configuration file
-if [ -f "$CONFIG_FILE" ]; then
-  cp "$CONFIG_FILE" "$CONFIG_DIR/"
+if [ -f "$SCRIPT_DIR/conf/$CONFIG_FILE" ]; then
+  # -n (--no-clobber) option to avoid overwriting existing file
+  cp -n "$SCRIPT_DIR/conf/$CONFIG_FILE" "$CONFIG_DIR/"
   chmod 644 "$CONFIG_DIR/$CONFIG_FILE"
   echo -e "${GREEN}✓${NC} Configuration file installed"
 else
@@ -99,24 +117,7 @@ echo -e "${GREEN}✓${NC} Created command: security-hardening"
 echo -e "${YELLOW}Installing required dependencies...${NC}"
 apt-get update >/dev/null 2>&1
 
-DEPENDENCIES=(
-  "wget"
-  "curl"
-  "git"
-  "openssl"
-  "mailutils"
-  "lsb-release"
-  "net-tools"
-  "iptables"
-)
-
-for dep in "${DEPENDENCIES[@]}"; do
-  if ! dpkg -l | grep -q "^ii.*$dep "; then
-    echo -e "  Installing $dep..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y "$dep" >/dev/null 2>&1
-  fi
-done
-
+verify_dependencies || install_dependencies
 echo -e "${GREEN}✓${NC} Dependencies installed"
 
 # Create systemd service for automated hardening checks
