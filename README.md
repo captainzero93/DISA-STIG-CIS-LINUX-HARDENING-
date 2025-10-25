@@ -1,5 +1,8 @@
 # Linux Security Hardening Suite v3.2
 
+OLD see https://github.com/captainzero93/security_harden_linux
+
+
 A comprehensive, enterprise-grade security hardening solution for Ubuntu and Debian-based systems, implementing DISA STIG, CIS Benchmark, and NSA guidelines.
 
 ## Features
